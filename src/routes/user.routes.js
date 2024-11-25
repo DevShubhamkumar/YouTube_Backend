@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { loginUser, logoutUser, refreshAccessToken, registerUser } from "../controllers/user.controller.js";
+import { loginUser, logoutUser, refreshAccessToken, registerUser,ChangePassword,getcurrentUser, AccountDetialUpdate,UpdateUserAvatar,updateCoverImage,getUserChannelProfile,getWatchHistory} from "../controllers/user.controller.js";
 import { upload } from "../middlewares/multer.middleware.js";
-import { verifyJWT } from "../middlewares/auth.middleware.js";
+// import { verifyJWT } from "../middlewares/auth.middleware.js";
+import {verifyJWT} from '../middlewares/auth.middleware.js'
  
 const router = Router();
 
@@ -22,8 +23,14 @@ router.route("/login").post(loginUser)
 
 
 // secured routes
- // verifyjwt is logut next pass value to logutsuer do your work
+ // verifyjwt is logut next pass value to logout do your work
 router.route("/logout").post(verifyJWT, logoutUser)
-router.route("./refresh-token").post(refreshAccessToken)
-
+router.route("/refresh-token").post(refreshAccessToken)
+router.route("/change-password").post(verifyJWT,ChangePassword)
+router.route("/current-user").get(verifyJWT,getcurrentUser)
+router.route("/update-account").patch(verifyJWT,AccountDetialUpdate)
+router.route("/avatar").patch(verifyJWT,upload.single("avatar"),UpdateUserAvatar)
+router.route("/coverImage").patch(verifyJWT,upload.single("coverImage"),updateCoverImage)
+router.route("/c/:username").get(verifyJWT,getUserChannelProfile)
+router.route("/history").get(verifyJWT,getWatchHistory)
 export default router 

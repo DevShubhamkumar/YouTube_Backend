@@ -54,11 +54,17 @@ refreshToken : {
 }
 )
 // custom hook for converting pass in hasing 
-userSchema.pre("save", async function  (next) {
-    if(!this.isModified("password")) return next();
-  this.password = await bcrypt.hash(this.password, 10)
-    next()
-})
+
+userSchema.pre("save", async function(next) {
+    if (!this.isModified("password")) return next();
+    
+    try {
+        this.password = await bcrypt.hash(this.password, 10);
+        next();
+    } catch (error) {
+        next(error);
+    }
+});
 // cutom methods for password is true or false 
 
 userSchema.methods.isPasswordCorrect = async function (password) {

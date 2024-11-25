@@ -4,6 +4,7 @@ import {User} from '../models/user.model.js'
 import {deleteFromCloudinary, uploadOnCloudinary} from '../utils/Cloudinary.js'
 import { ApiResponse } from '../utils/ApiResponse.js'
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose'
 
 const generateAccessTokenAndRefreshToken = async (userId)=>{
    try {
@@ -175,8 +176,8 @@ const logoutUser = asyncHandler( async (req,res)=>{
   await User.findByIdAndUpdate(
    req.user._id, 
    {
-      $set:{
-         refreshToken:undefined
+      $unset:{
+         refreshToken:1 // this remove field form documents
       }
    },
    {
@@ -198,8 +199,10 @@ const logoutUser = asyncHandler( async (req,res)=>{
 // refresh token
 
 const refreshAccessToken = asyncHandler( async (req,res)=>{
-   const IncomingTokenRequest = req.cookie.refreshToken || req.body.refreshToken
-
+   
+   const IncomingTokenRequest = req.cookies?.refreshToken || req.body?.refreshToken
+   // console.log(IncomingTokenRequest);
+   
    if(!IncomingTokenRequest){
       throw new ApiError(401,"unauhterized Request");  
    }
@@ -207,7 +210,7 @@ try {
    
      const decodedToken =  jwt.verify(
          IncomingTokenRequest,
-         process.env.ACCESS_TOKEN_SECRET
+         process.env.REFRESH_TOKEN_SECRET
       )
    
       const user = await User.findById(decodedToken?._id)
@@ -248,19 +251,23 @@ try {
 // password Change
 const ChangePassword = asyncHandler( async (req,res)=>{
 const {oldPassword , newPassword} = req.body
-const user = await User.updateOne(req.user?._id) // middleware 
+const user = await User.findByIdAndUpdate(req.user?._id) // middleware 
+
 const isPasswordCorrect = await user.isPasswordCorrect(oldPassword) // userSchema
 
 if (!isPasswordCorrect) {
    throw new ApiError(400,"Invalid old password ")
    
 }
+if(oldPassword===newPassword){
+   throw new ApiError(400,"password cannot be same as old")
+}
 user.password = newPassword
 await user.save({validateBeforeSave:false})
 
 return res
 .status(200)
-.json(200,{},"password changed succesfuly")
+.json( new ApiResponse(200,{},"password changed succesfuly"))
 
 })
 
@@ -281,27 +288,29 @@ const getcurrentUser = asyncHandler( async (req,res)=>{
 // Update user
 const AccountDetialUpdate = asyncHandler( async (req,res)=>{
 const {fullName,email,username} = req.body
-if(!(fullName|| email|| username)){
-   throw new ApiError(400,"All Fields are required")
+if (!fullName && !email && !username) {
+   throw new ApiError(400, "At least one field is required for update");
 }
- 
-const user = await User.findByIdAndUpdate(req.user?._id)(
+
+const user = await User.findByIdAndUpdate(
+   req.user?._id,
    {
-      $set :{
-         fullName,
-         email:email,
-         username // if key vlaue same we can write direct
-      }
+       $set: {
+           fullName,
+           email,
+           username
+       }
    },
    {
-      new : true // this return updated information
+       new: true
    }
-).select("-password")
+).select("-password");
 
 return res.status(200)
 .json(new ApiResponse(200,user,"Account Updated Successfully"))
  
 })
+
 // Update avatar image
 
 const UpdateUserAvatar = asyncHandler( async (req, res)=>{
@@ -321,7 +330,7 @@ const UpdateUserAvatar = asyncHandler( async (req, res)=>{
            user.avatar.split('/').pop().split('.')[0] : 
            null;
     
-    const updatedUser = await User.findByIdAndUpdate(req.user?._id)(
+    const updatedUser = await User.findByIdAndUpdate(req.user?._id,
       {
          $set:{
             avatar : avatar.url
@@ -340,14 +349,14 @@ const UpdateUserAvatar = asyncHandler( async (req, res)=>{
    })
 // Update Cover avatar image
 
-const updateCoverAvatar = asyncHandler( async (req,res)=>{
-const localcoverAvatar = req.file?.path
+const updateCoverImage = asyncHandler( async (req,res)=>{
+const localCoverImage = req.file?.path
 
-if(!localcoverAvatar){
+if(!localCoverImage){
    throw new ApiError(400, "Cover Avatar File Missing")
 }
 
-const coverImage = await uploadOnCloudinary(localcoverAvatar)
+const coverImage = await uploadOnCloudinary(localCoverImage)
 
 if (!coverImage.url) {
    throw new ApiError(400, "Error Unable to Update the file on Cloudinary URL Missing in Cover image")
@@ -355,14 +364,14 @@ if (!coverImage.url) {
  }
 
  const user = User.findById(req.url?._id);
- const oldAvatarPublicId = user.avatar ? 
- user.avatar.split('/').pop().split('.')[0] : 
+ const oldAvatarPublicId = user.coverImage ? 
+ user.coverImage.split('/').pop().split('.')[0] : 
  null;
  
-const updateUser = await User.findByIdAndUpdate(req.user?._id)(
+const updateUser = await User.findByIdAndUpdate(req.user?._id,
    {
       $set:{
-         avatar : avatar.url
+         coverImage : coverImage.url
       }
    },{new:true}
 ).select("-password")
@@ -371,8 +380,9 @@ if (oldAvatarPublicId) {
    await deleteFromCloudinary(oldAvatarPublicId)
 }
 
-return res.status(200),
-json(new ApiResponse(200,updateUser,"cover Image Updated Successfully"))
+return res.status(200)
+
+.json(new ApiResponse(200,updateUser,"cover Image Updated Successfully"))
 
 })
 
@@ -450,50 +460,56 @@ const getUserChannelProfile = asyncHandler( async (req,res)=>{
       new ApiResponse(200,channel[0], "User channel fetched Successfully ")
    )
 })
-
-// for Watch history 
-const getWatchHistory = asyncHandler(async ()=>{
-
-   const user = await User.aggregate([
-
-      {
-         $match:{
-            _id: new mongoose.Types.ObjectId(req.user?._id)// we taking this id liek this because in mongo aggreation it see it as string so we have to convert it manually 
-         }
-      },
-      {
-         $lookup:{
-            from : "videos",
-            localField:"watchHistory",
-            foreignField:"_id",
-            as : "WatchHistory",
-            pipeline:[
-               {
-                  $lookup:{
-                     form : "users",
-                     localField:"owner",
-                     foreignField:"_id",
-                     as : "owner",
-                     pipeline:[
-                       { $project:{
-                        fullName:1,
-                        username : 1,
-                        avatar:1
-
+// Watch History Aggregation Pipeline
+const getWatchHistory = asyncHandler(async (req, res) => {
+    const user = await User.aggregate([
+        // Stage 1: $match - Filters documents
+        {
+            $match: {
+                _id: new mongoose.Types.ObjectId(req.user?._id)
+                // Converting string ID to MongoDB ObjectId
+                // Required because aggregation pipeline sees IDs as strings
+            }
+        },
+        // Stage 2: $lookup - Performs a left outer join with videos collection
+        {
+            $lookup: {
+                from: "videos",               // Target collection to join
+                localField: "watchHistory",   // Field from users collection
+                foreignField: "_id",          // Field from videos collection
+                as: "WatchHistory",           // Output array field
+                pipeline: [
+                    // Nested $lookup to get video owner details
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "owner",
+                            foreignField: "_id",
+                            as: "owner",
+                            pipeline: [
+                                // $project stage to select specific fields
+                                {
+                                    $project: {
+                                        fullName: 1,   // 1 means include
+                                        username: 1,
+                                        avatar: 1
+                                    }
+                                }
+                            ]
                         }
-                      }
-                     ]
-                  },
-                  $addFields:{
-                     owner :{
-                         $first:"$owner"
-                     }
-                  }
-               }
-            ] 
-         }
-      }
-   ])  
+                    },
+                    // Add owner field with first element of owner array
+                    {
+                        $addFields: {
+                            owner: {
+                                $first: "$owner"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ])
 
    return res.status(200)
    .json(
@@ -502,4 +518,4 @@ const getWatchHistory = asyncHandler(async ()=>{
 
  
 })
-export {registerUser,loginUser,logoutUser,refreshAccessToken, ChangePassword,getcurrentUser,AccountDetialUpdate ,UpdateUserAvatar, updateCoverAvatar,getUserChannelProfile}
+export {registerUser,loginUser,logoutUser,refreshAccessToken, ChangePassword,getcurrentUser,AccountDetialUpdate ,UpdateUserAvatar, updateCoverImage,getUserChannelProfile,getWatchHistory}

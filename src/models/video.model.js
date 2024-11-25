@@ -29,7 +29,7 @@ import mongooseAggregatePaginate from "mongoose-aggregate-paginate-v2";
             type : Number,
             default : 0
         },
-        isPublished:{
+        isPublished:{ 
             type : Boolean,
             default:true
         },
@@ -48,4 +48,4 @@ import mongooseAggregatePaginate from "mongoose-aggregate-paginate-v2";
 videoSchema.plugin(mongooseAggregatePaginate    
 )
 
- export const Video = mongoose.model("video",videoSchema)
+ export const Video = mongoose.model("Video",videoSchema)
