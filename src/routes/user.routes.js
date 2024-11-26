@@ -33,4 +33,5 @@ router.route("/avatar").patch(verifyJWT,upload.single("avatar"),UpdateUserAvatar
 router.route("/coverImage").patch(verifyJWT,upload.single("coverImage"),updateCoverImage)
 router.route("/c/:username").get(verifyJWT,getUserChannelProfile)
 router.route("/history").get(verifyJWT,getWatchHistory)
+
 export default router 

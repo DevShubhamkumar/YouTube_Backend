@@ -386,7 +386,7 @@ return res.status(200)
 
 })
 
-// USer Channle profile
+// USer Channel profile
 
 const getUserChannelProfile = asyncHandler( async (req,res)=>{
 
